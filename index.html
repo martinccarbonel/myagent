@@ -354,15 +354,18 @@
 
 <script>
 /* =====================================================================
-   CONFIG — point this at your agent runtime to go live.
-   Leave API_BASE empty to run on built-in mock data.
+   CONFIG — zero setup needed.
+   - Open index.html directly            → runs on mock data (LOCAL MODE)
+   - Run `node server.js`, open the URL  → auto-detects the API (LIVE)
+   Optional: point API_BASE at a remote
+   agent runtime, e.g. "http://192.168.1.50:8787".
    Endpoints expected (see server.js):
      GET  /api/agents      GET  /api/workflows    GET  /api/activity
      GET  /api/memories    GET  /api/schedule     GET  /api/metrics
      POST /api/workflows/:id/run
    ===================================================================== */
 const CONFIG = {
-  API_BASE: "",          // e.g. "http://localhost:8787"
+  API_BASE: "",          // leave empty for auto-detection
   REFRESH_MS: 5000,
   FEED_INTERVAL_MS: 2600
 };
@@ -422,16 +425,19 @@ const MOCK = {
 };
 
 /* ---------------- API layer with graceful fallback ---------------- */
+let apiLive = false;
+
 async function apiGet(path, fallback) {
-  if (!CONFIG.API_BASE) return fallback;
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 2500);
     const res = await fetch(CONFIG.API_BASE + path, { signal: ctrl.signal });
     clearTimeout(timer);
     if (!res.ok) throw new Error(res.status);
+    apiLive = true;
     return await res.json();
   } catch {
+    apiLive = false;
     return fallback;
   }
 }
@@ -448,7 +454,7 @@ async function refresh() {
     apiGet("/api/metrics", MOCK.metrics)
   ]);
   state = { agents, workflows, memories, schedule, metrics };
-  liveMode = CONFIG.API_BASE !== "" && agents !== MOCK.agents;
+  liveMode = apiLive;
   document.getElementById("api-label").textContent = liveMode ? "LIVE" : "LOCAL MODE";
   document.getElementById("api-dot").className = "dot" + (liveMode ? "" : " warn");
   renderAll();
@@ -533,11 +539,8 @@ async function runWorkflow(id, btn) {
   btn.textContent = "⟳ RUNNING…";
   pushFeed("system", `workflow ${id} triggered`, "warn");
   try {
-    if (CONFIG.API_BASE) {
-      await fetch(`${CONFIG.API_BASE}/api/workflows/${id}/run`, { method: "POST" }).catch(() => {});
-    } else {
-      await new Promise(r => setTimeout(r, 1400));
-    }
+    await fetch(`${CONFIG.API_BASE}/api/workflows/${id}/run`, { method: "POST" }).catch(() => {});
+    await new Promise(r => setTimeout(r, 600));
     pushFeed("system", `workflow ${id} completed ✓`, "ok");
   } finally {
     btn.disabled = false;

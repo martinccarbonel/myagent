@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AGENTIC OS — Command Center</title>
+<style>
+  :root {
+    --bg: #05070d;
+    --bg-2: #0a0e1a;
+    --panel: rgba(13, 18, 32, 0.85);
+    --panel-2: rgba(20, 26, 45, 0.6);
+    --border: rgba(90, 130, 255, 0.14);
+    --border-glow: rgba(0, 229, 255, 0.35);
+    --text: #d7e2f4;
+    --text-dim: #6b7a99;
+    --cyan: #00e5ff;
+    --violet: #8b5cf6;
+    --green: #22e58a;
+    --amber: #ffb020;
+    --red: #ff4d6d;
+    --mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(139, 92, 246, 0.12), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(0, 229, 255, 0.10), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(90,130,255,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(90,130,255,0.05) 1px, transparent 1px);
+    background-size: 42px 42px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  #app { position: relative; z-index: 1; display: grid; grid-template-columns: 232px 1fr; grid-template-rows: 58px 1fr; height: 100vh; }
+
+  /* ===== Top bar ===== */
+  header {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 18px;
+    padding: 0 20px;
+    background: rgba(8, 11, 20, 0.9);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-weight: 700; letter-spacing: 2px; font-size: 14px; }
+  .logo .sigil {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: conic-gradient(from 180deg, var(--cyan), var(--violet), var(--cyan));
+    box-shadow: 0 0 14px rgba(0, 229, 255, 0.55);
+    animation: spin 6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .logo em { color: var(--cyan); font-style: normal; }
+  .top-status { display: flex; gap: 14px; margin-left: auto; align-items: center; font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; background: var(--panel-2); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .dot.off { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+  /* ===== Model switcher ===== */
+  .model-switch { position: relative; }
+  .model-btn {
+    font-family: var(--mono); font-size: 11px; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--border-glow); border-radius: 8px;
+    padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  }
+  .model-btn:hover { box-shadow: 0 0 12px rgba(0,229,255,0.25); }
+  .model-menu {
+    display: none; position: absolute; right: 0; top: 36px; min-width: 240px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 6px; z-index: 50; box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  }
+  .model-menu.open { display: block; }
+  .model-menu button {
+    width: 100%; text-align: left; background: none; border: 0; color: var(--text);
+    font-family: var(--mono); font-size: 11px; padding: 8px 10px; border-radius: 6px; cursor: pointer;
+    display: flex; justify-content: space-between; gap: 12px;
+  }
+  .model-menu button:hover { background: rgba(0,229,255,0.08); }
+  .model-menu .ctx { color: var(--text-dim); }
+
+  /* ===== Sidebar ===== */
+  nav {
+    border-right: 1px solid var(--border);
+    background: rgba(8, 11, 20, 0.65);
+    padding: 16px 10px; display: flex; flex-direction: column; gap: 4px;
+  }
+  nav .section-label { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; color: var(--text-dim); padding: 10px 12px 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 8px; cursor: pointer;
+    color: var(--text-dim); font-size: 13px; border: 1px solid transparent;
+    transition: all 0.15s ease;
+  }
+  .nav-item:hover { color: var(--text); background: var(--panel-2); }
+  .nav-item.active {
+    color: var(--cyan); background: rgba(0, 229, 255, 0.07);
+    border-color: rgba(0, 229, 255, 0.25);
+    box-shadow: inset 0 0 20px rgba(0, 229, 255, 0.06);
+  }
+  .nav-item .icon { width: 16px; text-align: center; }
+  .nav-item .count { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+  nav .spacer { flex: 1; }
+  .api-state { font-family: var(--mono); font-size: 10px; color: var(--text-dim); padding: 10px 12px; border-top: 1px solid var(--border); line-height: 1.7; }
+  .api-state b { color: var(--text); font-weight: 500; }
+
+  /* ===== Main ===== */
+  main { overflow-y: auto; padding: 22px 24px 40px; }
+  main::-webkit-scrollbar { width: 8px; }
+  main::-webkit-scrollbar-thumb { background: rgba(90,130,255,0.2); border-radius: 4px; }
+  .view { display: none; animation: fadein 0.25s ease; }
+  .view.active { display: block; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .view-title { font-family: var(--mono); font-size: 12px; letter-spacing: 3px; color: var(--text-dim); margin-bottom: 16px; }
+  .view-title b { color: var(--text); font-weight: 600; }
+
+  .grid { display: grid; gap: 16px; }
+  .stats-row { grid-template-columns: repeat(4, 1fr); margin-bottom: 16px; }
+  .main-grid { grid-template-columns: 2fr 1fr; align-items: start; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px; backdrop-filter: blur(8px);
+  }
+  .card h3 { font-family: var(--mono); font-size: 11px; letter-spacing: 2px; color: var(--text-dim); font-weight: 500; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .card h3::before { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .card h3 .right { margin-left: auto; letter-spacing: 0; color: var(--cyan); cursor: pointer; }
+  .card h3 .right:hover { text-decoration: underline; }
+
+  .stat .k { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; color: var(--text-dim); }
+  .stat .v { font-size: 26px; font-weight: 700; margin-top: 6px; font-family: var(--mono); }
+  .stat .d { font-size: 11px; margin-top: 4px; color: var(--text-dim); }
+  .glow-cyan { color: var(--cyan); text-shadow: 0 0 18px rgba(0,229,255,0.5); }
+  .glow-violet { color: var(--violet); text-shadow: 0 0 18px rgba(139,92,246,0.5); }
+  .glow-green { color: var(--green); text-shadow: 0 0 18px rgba(34,229,138,0.4); }
+  .glow-amber { color: var(--amber); text-shadow: 0 0 18px rgba(255,176,32,0.4); }
+
+  /* ===== Agents ===== */
+  .agent-list { display: flex; flex-direction: column; gap: 10px; }
+  .agent {
+    display: grid; grid-template-columns: 38px 1fr auto; gap: 12px; align-items: center;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .agent:hover { border-color: var(--border-glow); box-shadow: 0 0 18px rgba(0,229,255,0.08); }
+  .avatar {
+    width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 13px;
+    background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(139,92,246,0.15));
+    border: 1px solid var(--border);
+  }
+  .agent .name { font-weight: 600; font-size: 13px; }
+  .agent .role { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .agent .meta { text-align: right; font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+  .badge {
+    display: inline-block; font-family: var(--mono); font-size: 9px; letter-spacing: 1px;
+    padding: 3px 8px; border-radius: 999px; border: 1px solid; margin-bottom: 4px;
+  }
+  .badge.running { color: var(--green); border-color: rgba(34,229,138,0.4); background: rgba(34,229,138,0.08); }
+  .badge.thinking { color: var(--cyan); border-color: rgba(0,229,255,0.4); background: rgba(0,229,255,0.08); }
+  .badge.idle { color: var(--text-dim); border-color: var(--border); background: transparent; }
+  .badge.error { color: var(--red); border-color: rgba(255,77,109,0.4); background: rgba(255,77,109,0.08); }
+
+  .bar { height: 4px; border-radius: 2px; background: rgba(90,130,255,0.12); margin-top: 8px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--cyan), var(--violet)); box-shadow: 0 0 8px rgba(0,229,255,0.6); transition: width 0.6s ease; }
+
+  /* ===== Activity feed ===== */
+  .feed { font-family: var(--mono); font-size: 11px; line-height: 1.9; max-height: 380px; overflow-y: auto; }
+  .feed::-webkit-scrollbar { width: 6px; }
+  .feed::-webkit-scrollbar-thumb { background: rgba(90,130,255,0.2); border-radius: 3px; }
+  .feed .line { display: flex; gap: 10px; padding: 1px 0; animation: fadein 0.3s ease; }
+  .feed .t { color: var(--text-dim); flex-shrink: 0; }
+  .feed .src { color: var(--violet); flex-shrink: 0; width: 74px; overflow: hidden; text-overflow: ellipsis; }
+  .feed .msg { color: var(--text); word-break: break-word; }
+  .feed .msg.ok { color: var(--green); }
+  .feed .msg.warn { color: var(--amber); }
+  .feed .msg.err { color: var(--red); }
+
+  /* ===== Workflows ===== */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .tile {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px;
+    display: flex; flex-direction: column; gap: 8px; transition: all 0.2s ease; cursor: default;
+  }
+  .tile:hover { border-color: var(--border-glow); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+  .tile .wname { font-weight: 600; font-size: 13px; }
+  .tile .wdesc { font-size: 11px; color: var(--text-dim); flex: 1; }
+  .tile .wmeta { font-family: var(--mono); font-size: 10px; color: var(--text-dim); display: flex; justify-content: space-between; }
+  .run-btn {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 1px;
+    background: rgba(0,229,255,0.1); color: var(--cyan); border: 1px solid rgba(0,229,255,0.35);
+    border-radius: 8px; padding: 7px 0; cursor: pointer; transition: all 0.15s ease;
+  }
+  .run-btn:hover { background: rgba(0,229,255,0.2); box-shadow: 0 0 14px rgba(0,229,255,0.3); }
+  .run-btn:disabled { opacity: 0.5; cursor: wait; box-shadow: none; }
+
+  /* ===== Memory ===== */
+  .memory-item { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); margin-bottom: 8px; }
+  .memory-item .mtag { font-family: var(--mono); font-size: 9px; letter-spacing: 1px; color: var(--violet); }
+  .memory-item .mtext { font-size: 12px; margin-top: 4px; }
+  .memory-item .mdate { font-family: var(--mono); font-size: 9px; color: var(--text-dim); margin-top: 5px; }
+  .search-input {
+    width: 100%; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-family: var(--mono); font-size: 12px; padding: 9px 12px; outline: none; margin-bottom: 14px;
+  }
+  .search-input:focus { border-color: var(--border-glow); box-shadow: 0 0 12px rgba(0,229,255,0.15); }
+
+  /* ===== Scheduler ===== */
+  .sched-row {
+    display: grid; grid-template-columns: 1fr auto auto auto; gap: 14px; align-items: center;
+    padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); margin-bottom: 8px;
+  }
+  .sched-row .sname { font-size: 13px; font-weight: 600; }
+  .sched-row .scron { font-family: var(--mono); font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+  .sched-row .next { font-family: var(--mono); font-size: 10px; color: var(--cyan); }
+  .toggle { width: 34px; height: 18px; border-radius: 999px; background: rgba(90,130,255,0.15); border: 1px solid var(--border); position: relative; cursor: pointer; transition: background 0.2s; }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--text-dim); transition: all 0.2s; }
+  .toggle.on { background: rgba(34,229,138,0.25); border-color: rgba(34,229,138,0.5); }
+  .toggle.on::after { left: 18px; background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  /* ===== Analytics ===== */
+  .chart { display: flex; align-items: flex-end; gap: 10px; height: 180px; padding-top: 10px; }
+  .chart .col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; }
+  .chart .col i {
+    width: 100%; max-width: 46px; border-radius: 6px 6px 2px 2px;
+    background: linear-gradient(180deg, var(--cyan), rgba(139,92,246,0.35));
+    box-shadow: 0 0 16px rgba(0,229,255,0.2); transition: height 0.6s ease;
+  }
+  .chart .col span { font-family: var(--mono); font-size: 9px; color: var(--text-dim); }
+  .kv { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+  .kv:last-child { border-bottom: 0; }
+  .kv .k { color: var(--text-dim); }
+  .kv .v { color: var(--text); }
+
+  @media (max-width: 1100px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .main-grid { grid-template-columns: 1fr; }
+    #app { grid-template-columns: 64px 1fr; }
+    .nav-item span.label, nav .section-label, .api-state { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo"><div class="sigil"></div>AGENTIC<em>OS</em></div>
+    <div class="top-status">
+      <span class="pill"><span class="dot" id="api-dot"></span><span id="api-label">LOCAL MODE</span></span>
+      <span class="pill" id="clock">--:--:--</span>
+      <div class="model-switch">
+        <button class="model-btn" id="model-btn">◆ <span id="model-name">deepseek-v4.1-flash</span> ▾</button>
+        <div class="model-menu" id="model-menu"></div>
+      </div>
+    </div>
+  </header>
+
+  <nav>
+    <div class="section-label">COMMAND</div>
+    <div class="nav-item active" data-view="command"><span class="icon">◈</span><span class="label">Command Center</span></div>
+    <div class="nav-item" data-view="agents"><span class="icon">⬡</span><span class="label">Agents</span><span class="count" id="nav-agents"></span></div>
+    <div class="nav-item" data-view="workflows"><span class="icon">▶</span><span class="label">Workflows</span><span class="count" id="nav-workflows"></span></div>
+    <div class="section-label">SYSTEM</div>
+    <div class="nav-item" data-view="memory"><span class="icon">◍</span><span class="label">Memory</span></div>
+    <div class="nav-item" data-view="scheduler"><span class="icon">◷</span><span class="label">Scheduler</span></div>
+    <div class="nav-item" data-view="analytics"><span class="icon">▤</span><span class="label">Analytics</span></div>
+    <div class="spacer"></div>
+    <div class="api-state">
+      API <b id="api-base-label">mock</b><br>
+      uptime <b id="uptime">0s</b>
+    </div>
+  </nav>
+
+  <main>
+    <!-- ============ COMMAND CENTER ============ -->
+    <section class="view active" id="view-command">
+      <div class="view-title"><b>COMMAND CENTER</b> // LIVE ORCHESTRATION</div>
+      <div class="grid stats-row">
+        <div class="card stat"><div class="k">ACTIVE AGENTS</div><div class="v glow-cyan" id="stat-agents">0</div><div class="d" id="stat-agents-d">—</div></div>
+        <div class="card stat"><div class="k">TASKS TODAY</div><div class="v glow-violet" id="stat-tasks">0</div><div class="d">+12% vs yesterday</div></div>
+        <div class="card stat"><div class="k">TOKENS USED</div><div class="v glow-green" id="stat-tokens">0</div><div class="d">this session</div></div>
+        <div class="card stat"><div class="k">SPEND</div><div class="v glow-amber" id="stat-cost">$0.00</div><div class="d">last 24h</div></div>
+      </div>
+      <div class="grid main-grid">
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <div class="card">
+            <h3>AGENT STATUS <span class="right" onclick="go('agents')">view all →</span></h3>
+            <div class="agent-list" id="agents-home"></div>
+          </div>
+          <div class="card">
+            <h3>WORKFLOW TILES <span class="right" onclick="go('workflows')">manage →</span></h3>
+            <div class="tiles" id="workflows-home"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>LIVE ACTIVITY</h3>
+          <div class="feed" id="feed"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ AGENTS ============ -->
+    <section class="view" id="view-agents">
+      <div class="view-title"><b>AGENTS</b> // REGISTERED RUNTIMES</div>
+      <div class="card"><div class="agent-list" id="agents-full"></div></div>
+    </section>
+
+    <!-- ============ WORKFLOWS ============ -->
+    <section class="view" id="view-workflows">
+      <div class="view-title"><b>WORKFLOWS</b> // ONE-CLICK JOBS</div>
+      <div class="tiles" id="workflows-full"></div>
+    </section>
+
+    <!-- ============ MEMORY ============ -->
+    <section class="view" id="view-memory">
+      <div class="view-title"><b>MEMORY</b> // SHARED CONTEXT LAYER</div>
+      <input class="search-input" id="memory-search" placeholder="search memory…">
+      <div class="card"><div id="memory-list"></div></div>
+    </section>
+
+    <!-- ============ SCHEDULER ============ -->
+    <section class="view" id="view-scheduler">
+      <div class="view-title"><b>SCHEDULER</b> // CRON & TRIGGERS</div>
+      <div class="card" id="schedule-list"></div>
+    </section>
+
+    <!-- ============ ANALYTICS ============ -->
+    <section class="view" id="view-analytics">
+      <div class="view-title"><b>ANALYTICS</b> // COST & THROUGHPUT</div>
+      <div class="grid main-grid">
+        <div class="card">
+          <h3>TOKENS PER DAY (7D)</h3>
+          <div class="chart" id="chart"></div>
+        </div>
+        <div class="card">
+          <h3>COST BREAKDOWN</h3>
+          <div id="cost-breakdown"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+/* =====================================================================
+   CONFIG — point this at your agent runtime to go live.
+   Leave API_BASE empty to run on built-in mock data.
+   Endpoints expected (see server.js):
+     GET  /api/agents      GET  /api/workflows    GET  /api/activity
+     GET  /api/memories    GET  /api/schedule     GET  /api/metrics
+     POST /api/workflows/:id/run
+   ===================================================================== */
+const CONFIG = {
+  API_BASE: "",          // e.g. "http://localhost:8787"
+  REFRESH_MS: 5000,
+  FEED_INTERVAL_MS: 2600
+};
+
+const MODELS = [
+  { id: "deepseek-v4.1-flash", ctx: "128k" },
+  { id: "qwen3.8-27b-local",   ctx: "32k"  },
+  { id: "claude-opus-5.5",     ctx: "200k" },
+  { id: "hermes-4-local",      ctx: "64k"  }
+];
+
+/* ---------------- Mock data (fallback + seed) ---------------- */
+const MOCK = {
+  agents: [
+    { id: "orchestrator", name: "Orchestrator", role: "Routes tasks, plans and delegates", status: "running", progress: 72, tokens: 48210 },
+    { id: "researcher",   name: "Researcher",   role: "Web research, source synthesis",   status: "thinking", progress: 45, tokens: 91340 },
+    { id: "coder",        name: "Coder",        role: "Writes and reviews code",          status: "running", progress: 88, tokens: 130540 },
+    { id: "writer",       name: "Writer",       role: "Drafts docs and content",          status: "idle",    progress: 0,  tokens: 22110 },
+    { id: "ops",          name: "Ops",          role: "Cron jobs, deploys, monitoring",   status: "running", progress: 31, tokens: 15870 },
+    { id: "critic",       name: "Critic",       role: "Reviews output quality",           status: "idle",    progress: 0,  tokens: 8900 }
+  ],
+  workflows: [
+    { id: "w1", name: "Morning Brief",      desc: "Scrape news, summarize, email digest",              runs: 42, success: 98, last: "06:00 today" },
+    { id: "w2", name: "Inbox Triage",       desc: "Classify, draft replies, flag urgent",              runs: 118, success: 96, last: "12 min ago" },
+    { id: "w3", name: "Repo Watcher",       desc: "Review PRs, run tests, comment findings",           runs: 67, success: 91, last: "1 h ago" },
+    { id: "w4", name: "Content Pipeline",   desc: "Outline → draft → edit → publish",                  runs: 23, success: 87, last: "yesterday" },
+    { id: "w5", name: "Data Sync",          desc: "Pull CRM + sheets, reconcile, report diffs",        runs: 305, success: 99, last: "on schedule" },
+    { id: "w6", name: "Voice Briefing",     desc: "TTS summary of the day via Jarvis voice",           runs: 19, success: 100, last: "07:30 today" }
+  ],
+  memories: [
+    { tag: "PREFERENCE", text: "User prefers concise answers with code examples in TypeScript.", date: "2 h ago" },
+    { tag: "PROJECT",    text: "myagent repo: single-file dashboard, Node API stub on :8787.",   date: "today" },
+    { tag: "FACT",       text: "Deploy target is a HomeServer KVM VPS reached over Tailscale.", date: "1 d ago" },
+    { tag: "DECISION",   text: "Use local Qwen for anything containing private documents.",     date: "2 d ago" },
+    { tag: "PREFERENCE", text: "Morning brief arrives at 06:00, never earlier.",                date: "3 d ago" },
+    { tag: "FACT",       text: "Fish Audio voice 'Jarvis' is the default TTS voice.",           date: "4 d ago" }
+  ],
+  schedule: [
+    { id: "s1", name: "Morning Brief",      cron: "0 6 * * *",   next: "in 7 h",  on: true },
+    { id: "s2", name: "Inbox Triage",       cron: "*/15 * * * *", next: "in 4 m",  on: true },
+    { id: "s3", name: "Repo Watcher",       cron: "0 * * * *",   next: "in 38 m", on: true },
+    { id: "s4", name: "Weekly Report",      cron: "0 9 * * 1",   next: "Mon 09:00", on: false },
+    { id: "s5", name: "Memory Compaction",  cron: "0 3 * * *",   next: "in 11 h", on: true }
+  ],
+  metrics: {
+    tasksToday: 137,
+    tokens: 317070,
+    cost: 4.83,
+    perDay: [310, 428, 380, 512, 466, 590, 317],
+    breakdown: [
+      { k: "deepseek-v4.1-flash", v: "$2.41" },
+      { k: "claude-opus-5.5",     v: "$1.62" },
+      { k: "qwen3.8 (local)",     v: "$0.00" },
+      { k: "embeddings + tts",    v: "$0.80" }
+    ]
+  }
+};
+
+/* ---------------- API layer with graceful fallback ---------------- */
+async function apiGet(path, fallback) {
+  if (!CONFIG.API_BASE) return fallback;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    const res = await fetch(CONFIG.API_BASE + path, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(res.status);
+    return await res.json();
+  } catch {
+    return fallback;
+  }
+}
+
+let state = { agents: [], workflows: [], memories: [], schedule: [], metrics: MOCK.metrics };
+let liveMode = false;
+
+async function refresh() {
+  const [agents, workflows, memories, schedule, metrics] = await Promise.all([
+    apiGet("/api/agents", MOCK.agents),
+    apiGet("/api/workflows", MOCK.workflows),
+    apiGet("/api/memories", MOCK.memories),
+    apiGet("/api/schedule", MOCK.schedule),
+    apiGet("/api/metrics", MOCK.metrics)
+  ]);
+  state = { agents, workflows, memories, schedule, metrics };
+  liveMode = CONFIG.API_BASE !== "" && agents !== MOCK.agents;
+  document.getElementById("api-label").textContent = liveMode ? "LIVE" : "LOCAL MODE";
+  document.getElementById("api-dot").className = "dot" + (liveMode ? "" : " warn");
+  renderAll();
+}
+
+/* ---------------- Rendering ---------------- */
+const $ = (id) => document.getElementById(id);
+
+function badgeClass(s) { return s; }
+
+function agentCard(a) {
+  return `<div class="agent">
+    <div class="avatar">${a.name.slice(0, 2).toUpperCase()}</div>
+    <div>
+      <div class="name">${a.name}</div>
+      <div class="role">${a.role}</div>
+      <div class="bar"><i style="width:${a.progress}%"></i></div>
+    </div>
+    <div class="meta">
+      <span class="badge ${badgeClass(a.status)}">${a.status.toUpperCase()}</span><br>
+      ${(a.tokens / 1000).toFixed(1)}k tok
+    </div>
+  </div>`;
+}
+
+function tileHTML(w) {
+  return `<div class="tile">
+    <div class="wname">${w.name}</div>
+    <div class="wdesc">${w.desc}</div>
+    <div class="wmeta"><span>${w.runs} runs</span><span>${w.success}% ok</span></div>
+    <button class="run-btn" onclick="runWorkflow('${w.id}', this)">▶ RUN</button>
+  </div>`;
+}
+
+function renderAll() {
+  const a = state.agents, w = state.workflows;
+  $("agents-home").innerHTML = a.slice(0, 4).map(agentCard).join("");
+  $("agents-full").innerHTML = a.map(agentCard).join("");
+  $("workflows-home").innerHTML = w.slice(0, 4).map(tileHTML).join("");
+  $("workflows-full").innerHTML = w.map(tileHTML).join("");
+  $("nav-agents").textContent = a.length;
+  $("nav-workflows").textContent = w.length;
+
+  const running = a.filter(x => x.status === "running" || x.status === "thinking").length;
+  $("stat-agents").textContent = running;
+  $("stat-agents-d").textContent = `${a.length} registered`;
+  $("stat-tasks").textContent = state.metrics.tasksToday;
+  $("stat-tokens").textContent = (state.metrics.tokens / 1000).toFixed(0) + "k";
+  $("stat-cost").textContent = "$" + state.metrics.cost.toFixed(2);
+
+  renderMemory($("memory-search").value || "");
+  $("schedule-list").innerHTML = state.schedule.map(s => `
+    <div class="sched-row">
+      <div><div class="sname">${s.name}</div><div class="scron">${s.cron}</div></div>
+      <div class="next">${s.next}</div>
+      <div class="toggle ${s.on ? "on" : ""}" onclick="toggleSched('${s.id}', this)"></div>
+      <div class="wmeta">${s.on ? "ARMED" : "OFF"}</div>
+    </div>`).join("");
+
+  const max = Math.max(...state.metrics.perDay);
+  const days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+  $("chart").innerHTML = state.metrics.perDay.map((v, i) =>
+    `<div class="col"><i style="height:${(v / max) * 100}%"></i><span>${days[i]}<br>${v}k</span></div>`).join("");
+  $("cost-breakdown").innerHTML = state.metrics.breakdown.map(b =>
+    `<div class="kv"><span class="k">${b.k}</span><span class="v">${b.v}</span></div>`).join("");
+}
+
+function renderMemory(q) {
+  const items = state.memories.filter(m =>
+    !q || (m.text + m.tag).toLowerCase().includes(q.toLowerCase()));
+  $("memory-list").innerHTML = items.map(m => `
+    <div class="memory-item">
+      <div class="mtag">[${m.tag}]</div>
+      <div class="mtext">${m.text}</div>
+      <div class="mdate">${m.date}</div>
+    </div>`).join("") || `<div class="memory-item"><div class="mtext" style="color:var(--text-dim)">no matches</div></div>`;
+}
+
+/* ---------------- Interactions ---------------- */
+async function runWorkflow(id, btn) {
+  btn.disabled = true;
+  btn.textContent = "⟳ RUNNING…";
+  pushFeed("system", `workflow ${id} triggered`, "warn");
+  try {
+    if (CONFIG.API_BASE) {
+      await fetch(`${CONFIG.API_BASE}/api/workflows/${id}/run`, { method: "POST" }).catch(() => {});
+    } else {
+      await new Promise(r => setTimeout(r, 1400));
+    }
+    pushFeed("system", `workflow ${id} completed ✓`, "ok");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "▶ RUN";
+  }
+}
+
+function toggleSched(id, el) {
+  el.classList.toggle("on");
+  const s = state.schedule.find(x => x.id === id);
+  if (s) s.on = el.classList.contains("on");
+  pushFeed("scheduler", `${s ? s.name : id} ${s && s.on ? "armed" : "disarmed"}`, s && s.on ? "ok" : "warn");
+}
+
+function go(view) {
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.view === view));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + view));
+}
+document.querySelectorAll(".nav-item").forEach(n => n.addEventListener("click", () => go(n.dataset.view)));
+
+/* Model switcher */
+const menu = $("model-menu");
+menu.innerHTML = MODELS.map(m =>
+  `<button onclick="setModel('${m.id}')">${m.id}<span class="ctx">${m.ctx}</span></button>`).join("");
+$("model-btn").addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });
+document.addEventListener("click", () => menu.classList.remove("open"));
+function setModel(id) {
+  $("model-name").textContent = id;
+  menu.classList.remove("open");
+  pushFeed("router", `brain swapped → ${id}`, "ok");
+}
+
+/* Memory search */
+$("memory-search").addEventListener("input", (e) => renderMemory(e.target.value));
+
+/* ---------------- Live simulation ---------------- */
+const FEED_POOL = [
+  ["coder",      "committed patch to myagent (2 files)", "ok"],
+  ["researcher", "crawled 14 sources on agent frameworks", ""],
+  ["orchestrator", "delegated task → Researcher (priority: high)", ""],
+  ["ops",        "cron 'Inbox Triage' fired — 3 drafts queued", ""],
+  ["critic",     "reviewed output: 1 revision requested", "warn"],
+  ["coder",      "tests passing 47/47 ✓", "ok"],
+  ["writer",     "drafted weekly report (1,204 words)", ""],
+  ["memory",     "compacted 128 fragments → 12 summaries", ""],
+  ["ops",        "backup snapshot stored (2.1 GB)", "ok"],
+  ["researcher", "rate limit hit, backing off 30s", "warn"]
+];
+
+function pushFeed(src, msg, cls) {
+  const feed = $("feed");
+  const t = new Date().toTimeString().slice(0, 8);
+  const line = document.createElement("div");
+  line.className = "line";
+  line.innerHTML = `<span class="t">${t}</span><span class="src">${src}</span><span class="msg ${cls || ""}">${msg}</span>`;
+  feed.prepend(line);
+  while (feed.children.length > 60) feed.lastChild.remove();
+}
+
+function simulate() {
+  const [src, msg, cls] = FEED_POOL[Math.floor(Math.random() * FEED_POOL.length)];
+  pushFeed(src, msg, cls);
+  const a = state.agents[Math.floor(Math.random() * state.agents.length)];
+  if (a && a.status !== "idle") {
+    a.tokens += Math.floor(Math.random() * 900);
+    a.progress = Math.min(100, a.progress + Math.floor(Math.random() * 8));
+    if (a.progress >= 100) { a.progress = 10; state.metrics.tasksToday++; }
+    state.metrics.tokens += 800;
+    state.metrics.cost += 0.004;
+    renderAll();
+  }
+}
+
+/* Clock + uptime */
+const t0 = Date.now();
+setInterval(() => {
+  $("clock").textContent = new Date().toTimeString().slice(0, 8);
+  const s = Math.floor((Date.now() - t0) / 1000);
+  $("uptime").textContent = s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s";
+}, 1000);
+
+/* Boot */
+pushFeed("system", "AGENTIC OS booted — all subsystems nominal", "ok");
+pushFeed("router", `active brain: deepseek-v4.1-flash`, "");
+refresh();
+setInterval(refresh, CONFIG.REFRESH_MS);
+setInterval(simulate, CONFIG.FEED_INTERVAL_MS);
+</script>
+</body>
+</html>

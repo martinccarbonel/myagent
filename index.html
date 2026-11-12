@@ -244,6 +244,51 @@
   .kv .k { color: var(--text-dim); }
   .kv .v { color: var(--text); }
 
+  /* ===== Voice assistant ===== */
+  .assistant {
+    position: fixed; right: 22px; bottom: 22px; width: 320px; z-index: 100;
+    background: var(--panel); border: 1px solid var(--border-glow); border-radius: 16px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.6), 0 0 24px rgba(0,229,255,0.08);
+    backdrop-filter: blur(12px); overflow: hidden;
+  }
+  .a-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .orb {
+    width: 40px; height: 40px; border-radius: 50%; cursor: pointer; flex-shrink: 0;
+    background: radial-gradient(circle at 35% 35%, rgba(0,229,255,0.9), rgba(139,92,246,0.7) 60%, rgba(10,14,26,1));
+    border: 1px solid var(--border-glow); position: relative;
+    box-shadow: 0 0 16px rgba(0,229,255,0.35);
+    transition: box-shadow 0.2s ease;
+  }
+  .orb:hover { box-shadow: 0 0 26px rgba(0,229,255,0.6); }
+  .orb.listening { animation: pulse 1.1s ease-out infinite; }
+  .orb.thinking { animation: pulse 0.6s ease-out infinite; }
+  .orb.speaking { animation: pulse 0.45s ease-out infinite; }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(0,229,255,0.45), 0 0 16px rgba(0,229,255,0.35); }
+    100% { box-shadow: 0 0 0 18px rgba(0,229,255,0), 0 0 26px rgba(0,229,255,0.6); }
+  }
+  .a-name { font-family: var(--mono); font-size: 12px; letter-spacing: 2px; font-weight: 700; }
+  .a-status { font-family: var(--mono); font-size: 10px; color: var(--text-dim); margin-top: 3px; max-width: 190px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .a-mute { margin-left: auto; background: none; border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; cursor: pointer; font-size: 12px; }
+  .a-mute:hover { border-color: var(--border-glow); }
+  .a-log { height: 180px; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .a-log::-webkit-scrollbar { width: 6px; }
+  .a-log::-webkit-scrollbar-thumb { background: rgba(90,130,255,0.2); border-radius: 3px; }
+  .a-msg { font-size: 12px; line-height: 1.5; padding: 7px 10px; border-radius: 10px; max-width: 85%; animation: fadein 0.2s ease; }
+  .a-msg.user { align-self: flex-end; background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.3); }
+  .a-msg.bot { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); }
+  .a-input { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
+  .a-input input {
+    flex: 1; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 12px; padding: 8px 10px; outline: none; font-family: var(--sans);
+  }
+  .a-input input:focus { border-color: var(--border-glow); }
+  .a-input button {
+    background: rgba(0,229,255,0.12); color: var(--cyan); border: 1px solid rgba(0,229,255,0.35);
+    border-radius: 8px; width: 36px; cursor: pointer; font-size: 13px;
+  }
+  .a-input button:hover { background: rgba(0,229,255,0.22); }
+
   @media (max-width: 1100px) {
     .stats-row { grid-template-columns: repeat(2, 1fr); }
     .main-grid { grid-template-columns: 1fr; }
@@ -350,6 +395,22 @@
       </div>
     </section>
   </main>
+
+  <div class="assistant" id="assistant">
+    <div class="a-head">
+      <div class="orb" id="orb" title="click to talk"></div>
+      <div>
+        <div class="a-name">JARVIS</div>
+        <div class="a-status" id="a-status">idle — click the orb to talk</div>
+      </div>
+      <button class="a-mute" id="a-mute" title="mute / unmute voice">🔊</button>
+    </div>
+    <div class="a-log" id="a-log"></div>
+    <form class="a-input" id="a-form">
+      <input id="a-text" placeholder="type a command, or click the orb…" autocomplete="off">
+      <button type="submit">➤</button>
+    </form>
+  </div>
 </div>
 
 <script>
@@ -535,16 +596,14 @@ function renderMemory(q) {
 
 /* ---------------- Interactions ---------------- */
 async function runWorkflow(id, btn) {
-  btn.disabled = true;
-  btn.textContent = "⟳ RUNNING…";
+  if (btn) { btn.disabled = true; btn.textContent = "⟳ RUNNING…"; }
   pushFeed("system", `workflow ${id} triggered`, "warn");
   try {
     await fetch(`${CONFIG.API_BASE}/api/workflows/${id}/run`, { method: "POST" }).catch(() => {});
     await new Promise(r => setTimeout(r, 600));
     pushFeed("system", `workflow ${id} completed ✓`, "ok");
   } finally {
-    btn.disabled = false;
-    btn.textContent = "▶ RUN";
+    if (btn) { btn.disabled = false; btn.textContent = "▶ RUN"; }
   }
 }
 
@@ -613,6 +672,151 @@ function simulate() {
     renderAll();
   }
 }
+
+/* ---------------- Voice assistant (Jarvis) ---------------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const voiceSupported = !!SR;
+let listening = false, muted = false, recog = null;
+
+const orb = $("orb"), aStatus = $("a-status"), aLog = $("a-log");
+
+function setAStatus(t) { aStatus.textContent = t; }
+
+function aMsg(who, text) {
+  const div = document.createElement("div");
+  div.className = "a-msg " + who;
+  div.textContent = text;
+  aLog.appendChild(div);
+  aLog.scrollTop = aLog.scrollHeight;
+}
+
+function speak(text) {
+  if (muted || !window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const voices = speechSynthesis.getVoices();
+  const pref = voices.find(v => /en/i.test(v.lang) && /(daniel|alex|google uk english male)/i.test(v.name))
+            || voices.find(v => /en/i.test(v.lang));
+  if (pref) u.voice = pref;
+  u.rate = 1.02; u.pitch = 0.9;
+  u.onstart = () => { orb.classList.add("speaking"); setAStatus("speaking…"); };
+  u.onend = () => { orb.classList.remove("speaking"); setAStatus("idle — click the orb to talk"); };
+  speechSynthesis.speak(u);
+}
+
+function startListening() {
+  if (!voiceSupported) { setAStatus("voice needs Chrome or Edge — type below instead"); return; }
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  recog = new SR();
+  recog.lang = "en-US";
+  recog.interimResults = true;
+  let finalText = "";
+  recog.onresult = (e) => {
+    let interim = "";
+    for (const r of e.results) {
+      if (r.isFinal) finalText += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    setAStatus(finalText || interim || "listening…");
+  };
+  recog.onend = () => {
+    listening = false;
+    orb.classList.remove("listening");
+    const text = finalText.trim();
+    if (text) handleQuery(text);
+    else setAStatus("idle — click the orb to talk");
+  };
+  recog.onerror = () => {
+    listening = false;
+    orb.classList.remove("listening");
+    setAStatus("mic blocked — allow microphone in your browser");
+  };
+  recog.start();
+  listening = true;
+  orb.classList.add("listening");
+  setAStatus("listening…");
+}
+
+orb.addEventListener("click", () => {
+  if (listening) { if (recog) recog.stop(); }
+  else startListening();
+});
+
+$("a-mute").addEventListener("click", (e) => {
+  muted = !muted;
+  e.target.textContent = muted ? "🔇" : "🔊";
+  if (muted && window.speechSynthesis) speechSynthesis.cancel();
+});
+
+$("a-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = $("a-text");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  handleQuery(text);
+});
+
+function localBrain(q) {
+  const t = q.toLowerCase();
+  const running = state.agents.filter(a => a.status === "running" || a.status === "thinking");
+  const say = (s) => s;
+  if (/\b(hello|hi|hey|jarvis)\b/.test(t))
+    return say(`Hey there. ${running.length} agents active, ${state.metrics.tasksToday} tasks done today.`);
+  if (/status|agent/.test(t))
+    return say(state.agents.map(a => `${a.name} is ${a.status}`).join(". "));
+  if (/spend|cost/.test(t))
+    return say(`Spend in the last 24 hours is $${state.metrics.cost.toFixed(2)}.`);
+  if (/token/.test(t))
+    return say(`About ${(state.metrics.tokens / 1000).toFixed(0)} thousand tokens used this session.`);
+  if (/task/.test(t))
+    return say(`${state.metrics.tasksToday} tasks completed today.`);
+  if (/\btime\b/.test(t))
+    return say(`It's ${new Date().toLocaleTimeString()}.`);
+  if (/\bdate|day\b/.test(t))
+    return say(`Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}.`);
+  if (/memory/.test(t))
+    return say(state.memories[0] ? `Most recent memory: ${state.memories[0].text}` : "Memory is empty.");
+  if (/schedule|cron/.test(t)) {
+    const s = state.schedule.filter(x => x.on);
+    return say(s.length ? `${s.length} jobs armed. Next up: ${s[0].name}, ${s[0].next}.` : "No jobs are armed.");
+  }
+  const wf = state.workflows.find(w => /run|start|launch|execute/.test(t) && t.includes(w.name.toLowerCase()));
+  if (wf) {
+    runWorkflow(wf.id, null);
+    return say(`Running ${wf.name} now.`);
+  }
+  if (/workflow/.test(t))
+    return say(`You have ${state.workflows.length} workflows: ${state.workflows.map(w => w.name).join(", ")}.`);
+  return say("I'm running in demo mode, so my brain is small. Ask about agents, status, spend, tasks, schedule, memory — or say run followed by a workflow name.");
+}
+
+async function handleQuery(text) {
+  aMsg("user", text);
+  pushFeed("voice", `you: "${text}"`, "");
+  orb.classList.add("thinking");
+  setAStatus("thinking…");
+  let reply = null;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const res = await fetch(CONFIG.API_BASE + "/api/assistant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    });
+    clearTimeout(timer);
+    if (res.ok) reply = (await res.json()).reply;
+  } catch {}
+  if (!reply) reply = localBrain(text);
+  orb.classList.remove("thinking");
+  aMsg("bot", reply);
+  pushFeed("voice", `jarvis: "${reply}"`, "ok");
+  speak(reply);
+}
+
+aMsg("bot", "Jarvis online. Click the orb and speak, or type below.");
+if (voiceSupported) speechSynthesis.getVoices();
 
 /* Clock + uptime */
 const t0 = Date.now();

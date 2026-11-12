@@ -44,6 +44,32 @@ const metrics = {
   ]
 };
 
+function assistantReply(text) {
+  const t = (text || "").toLowerCase();
+  const running = agents.filter(a => a.status === "running" || a.status === "thinking");
+  if (/\b(hello|hi|hey|jarvis)\b/.test(t))
+    return `Hey there. ${running.length} agents active, ${metrics.tasksToday} tasks done today.`;
+  if (/status|agent/.test(t))
+    return agents.map(a => `${a.name} is ${a.status}`).join(". ");
+  if (/spend|cost/.test(t))
+    return `Spend in the last 24 hours is $${metrics.cost.toFixed(2)}.`;
+  if (/token/.test(t))
+    return `About ${(metrics.tokens / 1000).toFixed(0)} thousand tokens used this session.`;
+  if (/task/.test(t)) return `${metrics.tasksToday} tasks completed today.`;
+  if (/\btime\b/.test(t)) return `It's ${new Date().toLocaleTimeString()}.`;
+  if (/memory/.test(t))
+    return memories[0] ? `Most recent memory: ${memories[0].text}` : "Memory is empty.";
+  if (/schedule|cron/.test(t)) {
+    const s = schedule.filter(x => x.on);
+    return s.length ? `${s.length} jobs armed. Next up: ${s[0].name}, ${s[0].next}.` : "No jobs are armed.";
+  }
+  const wf = workflows.find(w => /run|start|launch|execute/.test(t) && t.includes(w.name.toLowerCase()));
+  if (wf) { wf.runs += 1; wf.last = "just now"; return `Running ${wf.name} now.`; }
+  if (/workflow/.test(t))
+    return `You have ${workflows.length} workflows: ${workflows.map(w => w.name).join(", ")}.`;
+  return "Ask me about agents, status, spend, tasks, schedule, memory — or say run followed by a workflow name.";
+}
+
 const routes = {
   "/api/agents":    () => agents,
   "/api/workflows": () => workflows,
@@ -59,6 +85,18 @@ const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
+
+  if (req.method === "POST" && url.pathname === "/api/assistant") {
+    let body = "";
+    req.on("data", c => body += c);
+    req.on("end", () => {
+      let text = "";
+      try { text = JSON.parse(body).text || ""; } catch {}
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ reply: assistantReply(text) }));
+    });
+    return;
+  }
 
   if (req.method === "POST" && /^\/api\/workflows\/[\w-]+\/run$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3];

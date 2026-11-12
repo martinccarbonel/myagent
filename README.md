@@ -47,6 +47,21 @@ If your runtime runs somewhere else (another machine or port), set its address i
 const CONFIG = { API_BASE: "http://192.168.1.50:8787", ... };
 ```
 
+## Voice assistant (Jarvis)
+
+Bottom-right corner of the dashboard: click the **glowing orb** and speak. Jarvis listens, answers **out loud**, and the conversation also shows up in the Live Activity feed. You can also just type to it.
+
+Try saying:
+
+- *"Hey Jarvis"* / *"what's my status"*
+- *"how much spend today"*
+- *"what's on the schedule"*
+- *"run morning brief"* — actually triggers that workflow
+
+**Browser note:** voice input works in **Chrome and Edge** (Firefox doesn't support it — you'll still be able to type). The first time, your browser will ask for **microphone permission** — click Allow.
+
+The assistant's brain is a `POST /api/assistant` endpoint (send `{"text": "..."}`, get `{"reply": "..."}` back). In demo mode the reply comes from a built-in rule-based brain, so it works even without the server. To give Jarvis a real LLM brain later, implement that one endpoint and call your model in it — the voice layer stays exactly the same.
+
 ## Files
 
 - `index.html` — the entire dashboard (HTML + CSS + JS, no dependencies)

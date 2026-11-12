@@ -57,10 +57,14 @@ Try saying:
 - *"how much spend today"*
 - *"what's on the schedule"*
 - *"run morning brief"* — actually triggers that workflow
+- *"turn off my inbox triage agent"* — actually disarms that scheduled job (the Scheduler tab updates too)
+- *"turn on inbox triage"* — arms it again
+
+It understands fuzzy names, so "pause the triage job" works as well as the exact name.
 
 **Browser note:** voice input works in **Chrome and Edge** (Firefox doesn't support it — you'll still be able to type). The first time, your browser will ask for **microphone permission** — click Allow.
 
-The assistant's brain is a `POST /api/assistant` endpoint (send `{"text": "..."}`, get `{"reply": "..."}` back). In demo mode the reply comes from a built-in rule-based brain, so it works even without the server. To give Jarvis a real LLM brain later, implement that one endpoint and call your model in it — the voice layer stays exactly the same.
+The assistant's brain is a `POST /api/assistant` endpoint (send `{"text": "..."}`, get `{"reply": "...", "brain": "..."}` back). In demo mode the reply comes from a built-in rule-based brain, so it works even without the server. To give Jarvis a real LLM brain later, implement that one endpoint and call your model in it — the voice layer stays exactly the same. The LLM can control the dashboard by returning a `say` plus `actions` array (`run_workflow`, `toggle_schedule`) — see `systemPrompt()` in `server.js`.
 
 ## Give Jarvis a real (local) LLM brain
 

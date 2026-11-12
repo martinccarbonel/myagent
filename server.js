@@ -57,9 +57,34 @@ function systemPrompt() {
     "Answer in 1-3 short sentences, spoken style, no markdown. Current dashboard state: " +
     `agents: ${agents.map(a => `${a.name}=${a.status}`).join(", ")}; ` +
     `tasks today: ${metrics.tasksToday}; spend last 24h: $${metrics.cost.toFixed(2)}; ` +
-    `workflows: ${workflows.map(w => w.name).join(", ")}. ` +
-    'If the user asks to run a workflow, reply ONLY with JSON like {"say":"Running X now.","run":"X"}. ' +
-    "Otherwise reply with plain text.";
+    `workflows: ${workflows.map(w => w.name).join(", ")}; ` +
+    `scheduled jobs: ${schedule.map(s => `${s.name}=${s.on ? "on" : "off"}`).join(", ")}. ` +
+    'To control the dashboard, reply ONLY with JSON: {"say":"short spoken reply","actions":[{"type":"run_workflow","name":"Morning Brief"},{"type":"toggle_schedule","name":"Inbox Triage","on":false}]}. ' +
+    "Supported action types: run_workflow, toggle_schedule. Use actions only when the user asks you to do something; otherwise reply plain text.";
+}
+
+function fuzzyFind(list, t) {
+  const toks = String(t).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return list.find(item => {
+    const words = item.name.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+    if (!words.length) return false;
+    return words.every(w => toks.some(tok =>
+      tok === w || (tok.length >= 3 && (w.startsWith(tok) || tok.startsWith(w)))));
+  });
+}
+
+function executeActions(actions) {
+  if (!Array.isArray(actions)) return;
+  for (const a of actions) {
+    if (!a || !a.type) continue;
+    if (a.type === "run_workflow") {
+      const wf = fuzzyFind(workflows, String(a.name || "").toLowerCase());
+      if (wf) { wf.runs += 1; wf.last = "just now"; }
+    } else if (a.type === "toggle_schedule") {
+      const s = fuzzyFind(schedule, String(a.name || "").toLowerCase());
+      if (s) s.on = a.on !== false;
+    }
+  }
 }
 
 async function askLLM(text) {
@@ -85,23 +110,18 @@ async function askLLM(text) {
     const content = ((data.message && data.message.content) || "").trim();
     if (!content) throw new Error("empty reply");
     let reply = content;
-    let runName = null;
+    let actions = null;
     if (content.startsWith("{")) {
       try {
         const j = JSON.parse(content);
         reply = j.say || content;
-        runName = j.run || null;
+        actions = j.actions || (j.run ? [{ type: "run_workflow", name: j.run }] : null);
       } catch {}
     }
     chatHistory.push({ role: "user", content: text });
     chatHistory.push({ role: "assistant", content: reply });
     while (chatHistory.length > 12) chatHistory.shift();
-    if (runName) {
-      const want = String(runName).toLowerCase();
-      const wf = workflows.find(w =>
-        w.name.toLowerCase().includes(want) || want.includes(w.name.toLowerCase()));
-      if (wf) { wf.runs += 1; wf.last = "just now"; }
-    }
+    executeActions(actions);
     return reply;
   } finally {
     clearTimeout(timer);
@@ -113,6 +133,15 @@ function assistantReply(text) {
   const running = agents.filter(a => a.status === "running" || a.status === "thinking");
   if (/\b(hello|hi|hey|jarvis)\b/.test(t))
     return `Hey there. ${running.length} agents active, ${metrics.tasksToday} tasks done today.`;
+  const wantsOff = /off|disable|stop|pause|shut|kill/.test(t);
+  const wantsOn = /\bon\b|enable|resume|arm|start/.test(t);
+  if (wantsOff || wantsOn) {
+    const s = fuzzyFind(schedule, t);
+    if (s) {
+      s.on = !wantsOff;
+      return `${s.name} is now ${s.on ? "armed" : "off"}.`;
+    }
+  }
   if (/status|agent/.test(t))
     return agents.map(a => `${a.name} is ${a.status}`).join(". ");
   if (/spend|cost/.test(t))
@@ -127,8 +156,8 @@ function assistantReply(text) {
     const s = schedule.filter(x => x.on);
     return s.length ? `${s.length} jobs armed. Next up: ${s[0].name}, ${s[0].next}.` : "No jobs are armed.";
   }
-  const wf = workflows.find(w => /run|start|launch|execute/.test(t) && t.includes(w.name.toLowerCase()));
-  if (wf) { wf.runs += 1; wf.last = "just now"; return `Running ${wf.name} now.`; }
+  const wf = fuzzyFind(workflows, t);
+  if (wf && /run|start|launch|execute/.test(t)) { wf.runs += 1; wf.last = "just now"; return `Running ${wf.name} now.`; }
   if (/workflow/.test(t))
     return `You have ${workflows.length} workflows: ${workflows.map(w => w.name).join(", ")}.`;
   return "Ask me about agents, status, spend, tasks, schedule, memory — or say run followed by a workflow name.";

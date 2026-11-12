@@ -757,12 +757,33 @@ $("a-form").addEventListener("submit", (e) => {
   handleQuery(text);
 });
 
+function fuzzyFind(list, t) {
+  const toks = String(t).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return list.find(item => {
+    const words = item.name.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+    if (!words.length) return false;
+    return words.every(w => toks.some(tok =>
+      tok === w || (tok.length >= 3 && (w.startsWith(tok) || tok.startsWith(w)))));
+  });
+}
+
 function localBrain(q) {
   const t = q.toLowerCase();
   const running = state.agents.filter(a => a.status === "running" || a.status === "thinking");
   const say = (s) => s;
   if (/\b(hello|hi|hey|jarvis)\b/.test(t))
     return say(`Hey there. ${running.length} agents active, ${state.metrics.tasksToday} tasks done today.`);
+  const wantsOff = /off|disable|stop|pause|shut|kill/.test(t);
+  const wantsOn = /\bon\b|enable|resume|arm|start/.test(t);
+  if (wantsOff || wantsOn) {
+    const s = fuzzyFind(state.schedule, t);
+    if (s) {
+      s.on = !wantsOff;
+      renderAll();
+      pushFeed("scheduler", `${s.name} ${s.on ? "armed" : "disarmed"} by voice`, s.on ? "ok" : "warn");
+      return say(`${s.name} is now ${s.on ? "armed" : "off"}.`);
+    }
+  }
   if (/status|agent/.test(t))
     return say(state.agents.map(a => `${a.name} is ${a.status}`).join(". "));
   if (/spend|cost/.test(t))
@@ -781,14 +802,14 @@ function localBrain(q) {
     const s = state.schedule.filter(x => x.on);
     return say(s.length ? `${s.length} jobs armed. Next up: ${s[0].name}, ${s[0].next}.` : "No jobs are armed.");
   }
-  const wf = state.workflows.find(w => /run|start|launch|execute/.test(t) && t.includes(w.name.toLowerCase()));
-  if (wf) {
+  const wf = fuzzyFind(state.workflows, t);
+  if (wf && /run|start|launch|execute/.test(t)) {
     runWorkflow(wf.id, null);
     return say(`Running ${wf.name} now.`);
   }
   if (/workflow/.test(t))
     return say(`You have ${state.workflows.length} workflows: ${state.workflows.map(w => w.name).join(", ")}.`);
-  return say("I'm running in demo mode, so my brain is small. Ask about agents, status, spend, tasks, schedule, memory — or say run followed by a workflow name.");
+  return say("I'm on my built-in demo brain right now. Start Ollama and restart the server for full conversation. Meanwhile ask me about status, spend, tasks, schedule, memory — or say run or turn off, plus a name.");
 }
 
 async function handleQuery(text) {
@@ -796,22 +817,23 @@ async function handleQuery(text) {
   pushFeed("voice", `you: "${text}"`, "");
   orb.classList.add("thinking");
   setAStatus("thinking…");
-  let reply = null;
+  let reply = null, brain = null;
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const timer = setTimeout(() => ctrl.abort(), 65000);
     const res = await fetch(CONFIG.API_BASE + "/api/assistant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text })
     });
     clearTimeout(timer);
-    if (res.ok) reply = (await res.json()).reply;
+    if (res.ok) { const j = await res.json(); reply = j.reply; brain = j.brain; }
   } catch {}
   if (!reply) reply = localBrain(text);
   orb.classList.remove("thinking");
   aMsg("bot", reply);
   pushFeed("voice", `jarvis: "${reply}"`, "ok");
+  if (brain) pushFeed("voice", `brain: ${brain}`, "");
   speak(reply);
 }
 

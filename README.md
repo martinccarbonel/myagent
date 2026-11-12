@@ -62,6 +62,30 @@ Try saying:
 
 The assistant's brain is a `POST /api/assistant` endpoint (send `{"text": "..."}`, get `{"reply": "..."}` back). In demo mode the reply comes from a built-in rule-based brain, so it works even without the server. To give Jarvis a real LLM brain later, implement that one endpoint and call your model in it — the voice layer stays exactly the same.
 
+## Give Jarvis a real (local) LLM brain
+
+Yes — Jarvis can run on a **local LLM** and act like a full voice assistant (think Claude voice mode, but private and offline). It uses [Ollama](https://ollama.com):
+
+1. Install Ollama (free): **[ollama.com/download](https://ollama.com/download)**
+2. Pull a model (one terminal command):
+   ```
+   ollama pull qwen3.8
+   ```
+   Any Ollama model works. Bigger = smarter but slower: `qwen3.8` needs a beefy machine; `qwen3:4b` or `llama3.2` (2–4 GB) run fine on most laptops.
+3. Start the dashboard server (Ollama can stay running in the background):
+   ```
+   LLM_MODEL=qwen3.8 node server.js
+   ```
+   (Windows PowerShell: `$env:LLM_MODEL="qwen3.8"; node server.js`)
+
+That's it. Every voice command now goes through your local model, with **live dashboard state injected into every prompt** — so Jarvis knows your real agent statuses, spend, and workflows, and remembers the last few conversation turns.
+
+**It can also act, not just talk:** ask it to *"run repo watcher"* and the model triggers the actual workflow in the dashboard.
+
+**Automatic fallback:** if Ollama isn't running (or is still loading the model), Jarvis silently uses the built-in rule-based brain instead — the dashboard never breaks. The first question after starting Ollama may take a while (model load time); after that it's fast.
+
+**Hardware note:** a 27B model wants ~20 GB of RAM/VRAM. On a normal laptop, use a small model (`qwen3:4b`, `llama3.2`) — still very capable for a dashboard assistant.
+
 ## Files
 
 - `index.html` — the entire dashboard (HTML + CSS + JS, no dependencies)

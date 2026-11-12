@@ -9,6 +9,14 @@ const path = require("path");
 
 const PORT = process.env.PORT || 8787;
 
+/* LLM brain: any Ollama-compatible server. Start Ollama and pick a model:
+     ollama pull qwen3.8        (or any model you have: llama3.2, qwen3:4b, …)
+     LLM_MODEL=qwen3.8 node server.js
+   If Ollama is unreachable, Jarvis falls back to the built-in rule brain. */
+const LLM_BASE = process.env.LLM_BASE || "http://localhost:11434";
+const LLM_MODEL = process.env.LLM_MODEL || "qwen3.8";
+const chatHistory = [];
+
 let agents = [
   { id: "orchestrator", name: "Orchestrator", role: "Routes tasks, plans and delegates", status: "running", progress: 72, tokens: 48210 },
   { id: "researcher",   name: "Researcher",   role: "Web research, source synthesis",   status: "thinking", progress: 45, tokens: 91340 },
@@ -43,6 +51,62 @@ const metrics = {
     { k: "qwen3.8 (local)",     v: "$0.00" }
   ]
 };
+
+function systemPrompt() {
+  return "You are Jarvis, the voice assistant inside the user's Agentic OS dashboard. " +
+    "Answer in 1-3 short sentences, spoken style, no markdown. Current dashboard state: " +
+    `agents: ${agents.map(a => `${a.name}=${a.status}`).join(", ")}; ` +
+    `tasks today: ${metrics.tasksToday}; spend last 24h: $${metrics.cost.toFixed(2)}; ` +
+    `workflows: ${workflows.map(w => w.name).join(", ")}. ` +
+    'If the user asks to run a workflow, reply ONLY with JSON like {"say":"Running X now.","run":"X"}. ' +
+    "Otherwise reply with plain text.";
+}
+
+async function askLLM(text) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 60000);
+  try {
+    const res = await fetch(LLM_BASE + "/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: LLM_MODEL,
+        stream: false,
+        messages: [
+          { role: "system", content: systemPrompt() },
+          ...chatHistory,
+          { role: "user", content: text }
+        ]
+      }),
+      signal: ctrl.signal
+    });
+    if (!res.ok) throw new Error("llm " + res.status);
+    const data = await res.json();
+    const content = ((data.message && data.message.content) || "").trim();
+    if (!content) throw new Error("empty reply");
+    let reply = content;
+    let runName = null;
+    if (content.startsWith("{")) {
+      try {
+        const j = JSON.parse(content);
+        reply = j.say || content;
+        runName = j.run || null;
+      } catch {}
+    }
+    chatHistory.push({ role: "user", content: text });
+    chatHistory.push({ role: "assistant", content: reply });
+    while (chatHistory.length > 12) chatHistory.shift();
+    if (runName) {
+      const want = String(runName).toLowerCase();
+      const wf = workflows.find(w =>
+        w.name.toLowerCase().includes(want) || want.includes(w.name.toLowerCase()));
+      if (wf) { wf.runs += 1; wf.last = "just now"; }
+    }
+    return reply;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function assistantReply(text) {
   const t = (text || "").toLowerCase();
@@ -92,8 +156,15 @@ const server = http.createServer((req, res) => {
     req.on("end", () => {
       let text = "";
       try { text = JSON.parse(body).text || ""; } catch {}
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ reply: assistantReply(text) }));
+      askLLM(text)
+        .then(reply => {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ reply, brain: "llm:" + LLM_MODEL }));
+        })
+        .catch(() => {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ reply: assistantReply(text), brain: "rules" }));
+        });
     });
     return;
   }
